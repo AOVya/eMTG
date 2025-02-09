@@ -1,4 +1,4 @@
-use std::thread;
+use std::collections::HashMap;
 
 use crate::scryfall_models::{Card, ImageUris, ScryfallApiClient};
 use egui_extras::{Column, TableBuilder};
@@ -10,7 +10,7 @@ pub struct CardSearchView {
     #[serde(skip)]
     client: ScryfallApiClient,
     #[serde(skip)]
-    card_display: Vec<Card>,
+    card_display: HashMap<String, Vec<u8>>,
 }
 
 impl Default for CardSearchView {
@@ -19,32 +19,41 @@ impl Default for CardSearchView {
             card_search_spot: "type card name here...".to_string(),
             card_search_result_table: vec![],
             client: ScryfallApiClient::new(),
-            card_display: vec![],
+            card_display: HashMap::new(),
         }
     }
 }
 
 impl CardSearchView {
     pub fn draw(&mut self, ui: &mut egui::Ui) {
-        ui.vertical(|ui| {
-            ui.horizontal(|ui| {
-                // let mut line_text = "type card name here";
-                ui.text_edit_singleline(&mut self.card_search_spot);
-                if ui.button("Search").clicked() {
-                    let result = self.client.search(self.card_search_spot.to_string());
-                    match result {
-                        Ok(info) => {
-                            self.card_search_result_table = info.data;
-                        }
-                        Err(e) => {
-                            panic!("Error with the search reqwest: {}", e)
-                        }
-                    }
-                }
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                self.show_search_bar(ui);
+                self.show_cards_table_extras(ui);
             });
-            self.show_cards_table_extras(ui);
         });
     }
+
+    fn show_search_bar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            // let mut line_text = "type card name here";
+            ui.text_edit_singleline(&mut self.card_search_spot);
+            if ui.button("Search").clicked() {
+                let result = self.client.search(self.card_search_spot.to_string());
+                match result {
+                    Ok(info) => {
+                        self.card_search_result_table = info.data;
+                    }
+                    Err(e) => {
+                        panic!("Error with the search reqwest: {}", e)
+                    }
+                }
+            }
+        });
+    }
+
+    fn show_card_versions(&mut self, ui: &mut egui::Ui) {}
+
     fn show_cards_table_extras(&mut self, ui: &mut egui::Ui) {
         // Create a new TableBuilder on the provided UI.
         TableBuilder::new(ui)
@@ -71,10 +80,19 @@ impl CardSearchView {
                 for card in &self.card_search_result_table {
                     // You can adjust the row height as needed; here we use 30.0.
                     body.row(30.0, |mut row| {
-                        row.col(|ui| if ui.label(&card.name).clicked() {
-                            let card_versions = self.client.get_card_versions(&card).expect("Error getting card versions");
-                            for card in card_versions {
-                                self.card_display.push(card);
+                        row.col(|ui| {
+                            if ui.label(&card.name).clicked() {
+                                let card_versions = self
+                                    .client
+                                    .get_card_versions(&card)
+                                    .expect("Error getting card versions");
+                                for card in card_versions {
+                                    if let Ok(image) =
+                                        self.client.download_card_image(&card.prints_search_uri)
+                                    {
+                                        self.card_display.insert(card.id, image);
+                                    }
+                                }
                             }
                         });
                         row.col(|ui| {
