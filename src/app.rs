@@ -94,7 +94,7 @@ impl eframe::App for TemplateApp {
             // The central panel the region left after adding TopPanel's and SidePanel's
             match self.main_panel.as_str() {
                 "card_searcher" => {
-                    self.card_serach_view.draw(ui);
+                    self.card_serach_view.draw(ui, ctx);
                 }
                 _ => {
                     ui.heading("Welcome to eMTG");

@@ -1,6 +1,7 @@
+use egui::TextureHandle;
 use std::collections::HashMap;
 
-use crate::scryfall_models::{Card, ImageUris, ScryfallApiClient};
+use crate::scryfall_models::{Card, ScryfallApiClient};
 use egui_extras::{Column, TableBuilder};
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -10,7 +11,7 @@ pub struct CardSearchView {
     #[serde(skip)]
     client: ScryfallApiClient,
     #[serde(skip)]
-    card_display: HashMap<String, Vec<u8>>,
+    card_display: HashMap<String, TextureHandle>,
 }
 
 impl Default for CardSearchView {
@@ -25,12 +26,13 @@ impl Default for CardSearchView {
 }
 
 impl CardSearchView {
-    pub fn draw(&mut self, ui: &mut egui::Ui) {
+    pub fn draw(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 self.show_search_bar(ui);
-                self.show_cards_table_extras(ui);
+                self.show_cards_table_extras(ui, ctx);
             });
+            self.show_card_versions(ui);
         });
     }
 
@@ -52,9 +54,26 @@ impl CardSearchView {
         });
     }
 
-    fn show_card_versions(&mut self, ui: &mut egui::Ui) {}
+    fn show_card_versions(&mut self, ui: &mut egui::Ui) {
+        egui::Grid::new("version_gallery")
+            .spacing([10.0, 10.0])
+            .show(ui, |ui| {
+                let columns = 4;
+                let mut i = 0;
+                for (id, texture) in self.card_display.iter() {
+                    ui.image(texture);
+                    if (i + 1) % columns == 0 {
+                        ui.end_row();
+                    }
+                    i += 1;
+                }
+                if self.card_display.len() % columns != 0 {
+                    ui.end_row();
+                }
+            });
+    }
 
-    fn show_cards_table_extras(&mut self, ui: &mut egui::Ui) {
+    fn show_cards_table_extras(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         // Create a new TableBuilder on the provided UI.
         TableBuilder::new(ui)
             .striped(true)
@@ -87,10 +106,27 @@ impl CardSearchView {
                                     .get_card_versions(&card)
                                     .expect("Error getting card versions");
                                 for card in card_versions {
-                                    if let Ok(image) =
-                                        self.client.download_card_image(&card.prints_search_uri)
-                                    {
-                                        self.card_display.insert(card.id, image);
+                                    if let Ok(image) = self.client.download_card_image(
+                                        &card
+                                            .image_uris
+                                            .expect("no image uris found for image")
+                                            .normal,
+                                    ) {
+                                        let dyn_image = image::load_from_memory(&image).unwrap();
+                                        let size = [
+                                            dyn_image.width() as usize,
+                                            dyn_image.height() as usize,
+                                        ];
+                                        let image_buffer = dyn_image.to_rgba8(); // Convert to RGBA8 format.
+                                        let pixels = image_buffer.into_raw();
+                                        let egui_cpu_image =
+                                            egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
+                                        let texture = ctx.load_texture(
+                                            format!("{}", card.id),
+                                            egui_cpu_image,
+                                            Default::default(),
+                                        );
+                                        self.card_display.insert(card.id, texture);
                                     }
                                 }
                             }

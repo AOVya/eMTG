@@ -1,12 +1,12 @@
-use std::{time::Duration, error::Error};
+use bytes::Bytes;
 use egui::load::Result;
-use image;
 use reqwest::{
     blocking::Client,
     header::{ACCEPT, ACCEPT_ENCODING, USER_AGENT},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::{error::Error, time::Duration};
 
 #[derive(Deserialize, Debug)]
 pub struct ScryfallSearchResponse {
@@ -23,8 +23,8 @@ impl Default for ScryfallSearchResponse {
         Self {
             data: vec![],
             extra: Value::default(),
-//            object: "".to_owned(),
-//            has_more: false,
+            //            object: "".to_owned(),
+            //            has_more: false,
         }
     }
 }
@@ -34,15 +34,15 @@ pub struct Card {
     pub set: String,
     pub name: String,
     pub id: String,
+    #[serde(default, skip)]
+    pub image_uris: Option<ImageUris>,
     #[serde(default)]
     pub prints_search_uri: String,
     #[serde(default)]
     pub type_line: Option<String>,
     #[serde(flatten)]
-    pub extra: Value,
+    pub _extra: Value,
     /*
-        #[serde(default, skip)]
-        pub image_uris: Option<ImageUris>,
        pub object: String,
        #[serde(rename = "oracle_id")]
        pub oracle_id: String,
@@ -50,7 +50,7 @@ pub struct Card {
        #[serde(default)]
        pub multiverse_ids: Vec<u32>,
        #[serde(default)]
-       pub mtgo_id: Option<u32>,
+       pub ScryfallSearchResponsemtgo_id: Option<u32>,
        #[serde(default)]
        pub mtgo_foil_id: Option<u32>,
        #[serde(default)]
@@ -90,9 +90,7 @@ pub struct ImageUris {
     pub normal: String,
     pub large: String,
     pub png: String,
-    #[serde(rename = "art_crop")]
     pub art_crop: String,
-    #[serde(rename = "border_crop")]
     pub border_crop: String,
 }
 
@@ -132,23 +130,21 @@ impl ScryfallApiClient {
             .send()?;
 
         let body_text = response.text()?;
-        let body_json: ScryfallSearchResponse = match serde_json::from_str(&body_text) {
-            Ok(it) => it,
-            Err(err) => {
-                print!(
-                    "There was an error parsing the text string into json: {}",
-                    err
-                );
-                ScryfallSearchResponse::default()
-            }
-        };
+        let body_json: ScryfallSearchResponse = serde_json::from_str(&body_text).unwrap_or_else(|err| {
+            print!(
+                "There was an error parsing the text string into json: {}",
+                err
+            );
+            ScryfallSearchResponse::default()
+        });
         //eprintln!("{:#?}", body_json);
         Ok(body_json)
     }
 
     /// Given a Card struct return a vector with all its card variations
     pub fn get_card_versions(&self, card: &Card) -> Result<Vec<Card>, reqwest::Error> {
-        let response = self.client
+        let response = self
+            .client
             .get(&card.prints_search_uri)
             .header(
                 USER_AGENT,
@@ -159,14 +155,16 @@ impl ScryfallApiClient {
             .timeout(Duration::from_secs(3))
             .send()?;
 
-        let response_object: ScryfallSearchResponse = response.json().expect("Deserializign card prints");
+        let response_object: ScryfallSearchResponse =
+            response.json().expect("Deserializign card prints");
         println!("Found {} versions of the card", response_object.data.len());
         Ok(response_object.data)
     }
 
     /// Given a card image Uri return the raw pixels in bytes (ready to load into egui image)
-    pub fn download_card_image(&self, card_image_uri: &String) -> Result<Vec<u8>, Box<dyn Error>> {
-        let response = self.client
+    pub fn download_card_image(&self, card_image_uri: &String) -> Result<Bytes, Box<dyn Error>> {
+        let response = self
+            .client
             .get(card_image_uri)
             .header(
                 USER_AGENT,
@@ -177,13 +175,9 @@ impl ScryfallApiClient {
             .timeout(Duration::from_secs(3))
             .send()?;
 
+        // println!("{:?}", String::from(response.text()?));
         let image_bytes = response.bytes()?;
-        let dyn_image = image::load_from_memory(&image_bytes)?;
-        let size = [dyn_image.width() as usize, dyn_image.height() as usize];
-        let image_buffer = dyn_image.to_rgba8(); // Convert to RGBA8 format.
-        let pixels = image_buffer.into_raw();
 
-        Ok(pixels)
-
+        Ok(image_bytes)
     }
 }
