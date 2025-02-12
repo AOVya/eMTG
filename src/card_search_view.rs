@@ -2,6 +2,8 @@ use crate::scryfall_models::{Card, ScryfallApiClient};
 use egui::{vec2, Frame, Image, Margin, TextureHandle};
 use egui_extras::{Column, Size, TableBuilder};
 use std::collections::HashMap;
+use std::sync::mpsc;
+use bytes::Bytes;
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct CardSearchView {
@@ -11,15 +13,22 @@ pub struct CardSearchView {
     client: ScryfallApiClient,
     #[serde(skip)]
     card_display: HashMap<String, TextureHandle>,
+    #[serde(skip)]
+    rx: mpsc::Receiver<(String, Bytes)>,
+    #[serde(skip)]
+    tx: mpsc::Sender<(String, Bytes)>,
 }
 
 impl Default for CardSearchView {
     fn default() -> Self {
+        let (tx, rx) = mpsc::channel();
         Self {
             card_search_spot: "angel".to_string(),
             card_search_result_table: vec![],
             client: ScryfallApiClient::new(),
             card_display: HashMap::new(),
+            rx,
+            tx,
         }
     }
 }
@@ -29,8 +38,8 @@ impl CardSearchView {
         self.show_search_bar(ui);
         ui.separator();
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Min).with_cross_justify(true), |ui| {
-            self.show_cards_table_extras(ui, ctx);
-            self.show_card_versions(ui);
+            self.show_cards_table_extras(ui);
+            self.show_card_versions(ui, ctx);
         });
     }
 
@@ -52,7 +61,7 @@ impl CardSearchView {
         });
     }
 
-    fn show_card_versions(&mut self, ui: &mut egui::Ui) {
+    fn show_card_versions(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         // Define the desired minimum cell width.
         let cell_width: f32 = 250.0;
         // Calculate how many cells we can fit in the available width.
@@ -62,6 +71,27 @@ impl CardSearchView {
             num_columns = 1;
         }
         ui.vertical(|ui| {
+            if let Some(rx) = &self.rx {
+                if let Ok((id,image)) = rx.try_recv() {
+                    let dyn_image = image::load_from_memory(&image).unwrap();
+                    let size = [
+                        dyn_image.width() as usize,
+                        dyn_image.height() as usize,
+                    ];
+                    let image_buffer = dyn_image.to_rgba8(); // Convert to RGBA8 format.
+                    let pixels = image_buffer.into_raw();
+                    let egui_cpu_image =
+                        egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
+                    // This sends the image to the gpu for faster render and extra
+                    // memory
+                    let texture = ctx.load_texture(
+                        format!("{}", id),
+                        egui_cpu_image,
+                        Default::default(),
+                    );
+                    self.card_display.insert(id, texture);
+                }
+            }
             if !self.card_display.is_empty() {
                 ui.heading("Card Versions");
             }
@@ -74,7 +104,7 @@ impl CardSearchView {
                             // End the row after filling a row with the computed number of columns.
                             ui.add(
                                 Image::new(card.1)
-                                    .rounding(11.0)
+                                    .rounding(15.0)
                                     .max_width(cell_width)
                                     .maintain_aspect_ratio(true)
                                     .fit_to_original_size(1.0)
@@ -91,7 +121,7 @@ impl CardSearchView {
 
     }
 
-    fn show_cards_table_extras(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+    fn show_cards_table_extras(&mut self, ui: &mut egui::Ui) {
         // Create a new TableBuilder on the provided UI.
         if self.card_search_result_table.is_empty() {
             return;
@@ -132,36 +162,10 @@ impl CardSearchView {
                             });
                             if row.response().clicked() {
                                 self.card_display.clear();
-                                let card_versions = self
+                                let _card_number = self
                                     .client
-                                    .get_card_versions(&card)
+                                    .get_card_versions(self.tx.clone(), card)
                                     .expect("Error getting card versions");
-                                for card in card_versions {
-                                    if let Ok(image) = self.client.download_card_image(
-                                        &card
-                                            .image_uris
-                                            .expect("no image uris found for image")
-                                            .png,
-                                    ) {
-                                        let dyn_image = image::load_from_memory(&image).unwrap();
-                                        let size = [
-                                            dyn_image.width() as usize,
-                                            dyn_image.height() as usize,
-                                        ];
-                                        let image_buffer = dyn_image.to_rgba8(); // Convert to RGBA8 format.
-                                        let pixels = image_buffer.into_raw();
-                                        let egui_cpu_image =
-                                            egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
-                                        // This sends the image to the gpu for faster render and extra
-                                        // memory
-                                        let texture = ctx.load_texture(
-                                            format!("{}", card.id),
-                                            egui_cpu_image,
-                                            Default::default(),
-                                        );
-                                        self.card_display.insert(card.id, texture);
-                                    }
-                                }
                             }
                         });
                     }

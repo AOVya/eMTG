@@ -7,11 +7,14 @@ use reqwest::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{error::Error, time::Duration};
+use std::sync::mpsc;
+use std::thread;
 
 #[derive(Deserialize, Debug)]
 pub struct ScryfallSearchResponse {
     /// Typically "list" for a list response.
     pub data: Vec<Card>,
+    pub total_cards: Option<u32>,
     #[serde(flatten)]
     pub _extra: Value,
     //    pub object: String,
@@ -22,6 +25,7 @@ impl Default for ScryfallSearchResponse {
     fn default() -> Self {
         Self {
             data: vec![],
+            total_cards: None,
             _extra: Value::default(),
             //            object: "".to_owned(),
             //            has_more: false,
@@ -143,7 +147,7 @@ impl ScryfallApiClient {
     }
 
     /// Given a Card struct return a vector with all its card variations
-    pub fn get_card_versions(&self, card: &Card) -> Result<Vec<Card>, reqwest::Error> {
+    pub fn get_card_versions(&self, tx: mpsc::Sender<(String, Bytes)>, card: &Card) -> Result<u32, reqwest::Error> {
         let response = self
             .client
             .get(&card.prints_search_uri)
@@ -159,11 +163,35 @@ impl ScryfallApiClient {
         let response_object: ScryfallSearchResponse =
             response.json().expect("Deserializign card prints");
         println!("Found {} versions of the card", response_object.data.len());
-        Ok(response_object.data)
+        let card_n = response_object.total_cards.unwrap();
+
+        thread::spawn( move || {
+            let tmp_client = Client::new();
+            for card in &response_object.data {
+                let response = tmp_client
+                    .get(card.image_uris.as_ref().unwrap().normal.as_str())
+                    .header(
+                        USER_AGENT,
+                        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    )
+                    .header(ACCEPT, "application/json")
+                    .header(ACCEPT_ENCODING, "gzip, deflate, br, zstd")
+                    .timeout(Duration::from_secs(3))
+                    .send()
+                    .unwrap_or_else(
+                        |e| panic!("Error downloading card image: {}", e),);
+
+                if let Ok(img) = response.bytes() {
+                    tx.send((card.id.parse::<String>().unwrap(), img)).unwrap_or_else(|e| panic!("Error sending card image: {}", e));
+                }
+            }
+        });
+
+        Ok(card_n)
     }
 
     /// Given a card image Uri return the raw pixels in bytes (ready to load into egui image)
-    pub fn download_card_image(&self, card_image_uri: &String) -> Result<Bytes, Box<dyn Error>> {
+    fn download_card_image(&self, card_image_uri: &String) -> Result<Bytes, Box<dyn Error>> {
         let response = self
             .client
             .get(card_image_uri)
@@ -176,7 +204,6 @@ impl ScryfallApiClient {
             .timeout(Duration::from_secs(3))
             .send()?;
 
-        // println!("{:?}", String::from(response.text()?));
         let image_bytes = response.bytes()?;
 
         Ok(image_bytes)
