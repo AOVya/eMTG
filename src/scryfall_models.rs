@@ -13,7 +13,7 @@ pub struct ScryfallSearchResponse {
     /// Typically "list" for a list response.
     pub data: Vec<Card>,
     #[serde(flatten)]
-    pub extra: Value,
+    pub _extra: Value,
     //    pub object: String,
     //    pub has_more: bool,
 }
@@ -22,7 +22,7 @@ impl Default for ScryfallSearchResponse {
     fn default() -> Self {
         Self {
             data: vec![],
-            extra: Value::default(),
+            _extra: Value::default(),
             //            object: "".to_owned(),
             //            has_more: false,
         }
@@ -34,7 +34,7 @@ pub struct Card {
     pub set: String,
     pub name: String,
     pub id: String,
-    #[serde(default, skip)]
+    #[serde(default)]
     pub image_uris: Option<ImageUris>,
     #[serde(default)]
     pub prints_search_uri: String,
@@ -84,7 +84,7 @@ pub struct Card {
     */
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct ImageUris {
     pub small: String,
     pub normal: String,
@@ -130,13 +130,14 @@ impl ScryfallApiClient {
             .send()?;
 
         let body_text = response.text()?;
-        let body_json: ScryfallSearchResponse = serde_json::from_str(&body_text).unwrap_or_else(|err| {
-            print!(
-                "There was an error parsing the text string into json: {}",
-                err
-            );
-            ScryfallSearchResponse::default()
-        });
+        let body_json: ScryfallSearchResponse =
+            serde_json::from_str(&body_text).unwrap_or_else(|err| {
+                print!(
+                    "There was an error parsing the text string into json: {}",
+                    err
+                );
+                ScryfallSearchResponse::default()
+            });
         //eprintln!("{:#?}", body_json);
         Ok(body_json)
     }
