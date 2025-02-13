@@ -1,34 +1,38 @@
 use crate::scryfall_models::{Card, ScryfallApiClient};
-use egui::{vec2, Frame, Image, Margin, TextureHandle};
+use egui::{vec2, Color32, Frame, Image, Margin, TextureHandle};
 use egui_extras::{Column, Size, TableBuilder};
 use std::collections::HashMap;
 use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, Sender};
 use bytes::Bytes;
+use eframe::wgpu::Color;
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct CardSearchView {
     card_search_spot: String,
     card_search_result_table: Vec<Card>,
+    cards_in_display: u16,
     #[serde(skip)]
     client: ScryfallApiClient,
     #[serde(skip)]
     card_display: HashMap<String, TextureHandle>,
     #[serde(skip)]
-    rx: mpsc::Receiver<(String, Bytes)>,
+    rx: Option<mpsc::Receiver<(String, Bytes)>>,
     #[serde(skip)]
-    tx: mpsc::Sender<(String, Bytes)>,
+    tx: Option<mpsc::Sender<(String, Bytes)>>,
 }
 
 impl Default for CardSearchView {
     fn default() -> Self {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx): (Sender<(String, Bytes)>, Receiver<(String, Bytes)>) = mpsc::channel();
         Self {
             card_search_spot: "angel".to_string(),
             card_search_result_table: vec![],
             client: ScryfallApiClient::new(),
             card_display: HashMap::new(),
-            rx,
-            tx,
+            cards_in_display: 0,
+            rx: Some(rx),
+            tx: Some(tx),
         }
     }
 }
@@ -71,26 +75,24 @@ impl CardSearchView {
             num_columns = 1;
         }
         ui.vertical(|ui| {
-            if let Some(rx) = &self.rx {
-                if let Ok((id,image)) = rx.try_recv() {
-                    let dyn_image = image::load_from_memory(&image).unwrap();
-                    let size = [
-                        dyn_image.width() as usize,
-                        dyn_image.height() as usize,
-                    ];
-                    let image_buffer = dyn_image.to_rgba8(); // Convert to RGBA8 format.
-                    let pixels = image_buffer.into_raw();
-                    let egui_cpu_image =
-                        egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
-                    // This sends the image to the gpu for faster render and extra
-                    // memory
-                    let texture = ctx.load_texture(
-                        format!("{}", id),
-                        egui_cpu_image,
-                        Default::default(),
-                    );
-                    self.card_display.insert(id, texture);
-                }
+            if let Ok((id, image)) = self.rx.as_ref().unwrap().try_recv() {
+                let dyn_image = image::load_from_memory(&image).unwrap();
+                let size = [
+                    dyn_image.width() as usize,
+                    dyn_image.height() as usize,
+                ];
+                let image_buffer = dyn_image.to_rgba8(); // Convert to RGBA8 format.
+                let pixels = image_buffer.into_raw();
+                let egui_cpu_image =
+                    egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
+                // This sends the image to the gpu for faster render and extra
+                // memory
+                let texture = ctx.load_texture(
+                    format!("{}", id),
+                    egui_cpu_image,
+                    Default::default(),
+                );
+                self.card_display.insert(id, texture);
             }
             if !self.card_display.is_empty() {
                 ui.heading("Card Versions");
@@ -108,6 +110,7 @@ impl CardSearchView {
                                     .max_width(cell_width)
                                     .maintain_aspect_ratio(true)
                                     .fit_to_original_size(1.0)
+                                    .bg_fill(Color32::WHITE)
                             );
                             if (i + 1) % (num_columns) == 0 {
                                 ui.end_row();
@@ -116,9 +119,8 @@ impl CardSearchView {
                         ui.end_row();
                     })
             });
-        }
-        );
-
+            ui.add(egui::ProgressBar::new(self.card_display.len() as f32 / self.cards_in_display as f32).show_percentage().animate(true));
+        });
     }
 
     fn show_cards_table_extras(&mut self, ui: &mut egui::Ui) {
@@ -162,10 +164,10 @@ impl CardSearchView {
                             });
                             if row.response().clicked() {
                                 self.card_display.clear();
-                                let _card_number = self
+                                self.cards_in_display = self
                                     .client
-                                    .get_card_versions(self.tx.clone(), card)
-                                    .expect("Error getting card versions");
+                                    .get_card_versions(self.tx.clone().unwrap(), card)
+                                    .expect("Error getting card versions") as u16;
                             }
                         });
                     }
