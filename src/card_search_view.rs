@@ -10,7 +10,11 @@ use eframe::wgpu::Color;
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct CardSearchView {
     card_search_spot: String,
+    #[serde(skip)]
+    are_cards_loading: bool,
+    #[serde(skip)]
     card_search_result_table: Vec<Card>,
+    #[serde(skip)]
     cards_in_display: u16,
     #[serde(skip)]
     client: ScryfallApiClient,
@@ -27,6 +31,7 @@ impl Default for CardSearchView {
         let (tx, rx): (Sender<(String, Bytes)>, Receiver<(String, Bytes)>) = mpsc::channel();
         Self {
             card_search_spot: "angel".to_string(),
+            are_cards_loading: false,
             card_search_result_table: vec![],
             client: ScryfallApiClient::new(),
             card_display: HashMap::new(),
@@ -94,9 +99,18 @@ impl CardSearchView {
                 );
                 self.card_display.insert(id, texture);
             }
-            if !self.card_display.is_empty() {
-                ui.heading("Card Versions");
-            }
+            ui.horizontal(|ui| {
+                if !self.card_display.is_empty() {
+                    ui.heading("Card Versions");
+                }
+                let progress = self.card_display.len() as f32 / self.cards_in_display as f32;
+                if self.are_cards_loading && progress < 1.0 {
+                    ui.add(egui::ProgressBar::new(progress).show_percentage().animate(true));
+                }
+                if progress == 1.0 {
+                    self.are_cards_loading = false;
+                }
+            });
             egui::ScrollArea::vertical().show(ui, |ui| {
                 egui::Grid::new("cards_grid")
                     .num_columns(num_columns)
@@ -119,7 +133,6 @@ impl CardSearchView {
                         ui.end_row();
                     })
             });
-            ui.add(egui::ProgressBar::new(self.card_display.len() as f32 / self.cards_in_display as f32).show_percentage().animate(true));
         });
     }
 
@@ -168,6 +181,7 @@ impl CardSearchView {
                                     .client
                                     .get_card_versions(self.tx.clone().unwrap(), card)
                                     .expect("Error getting card versions") as u16;
+                                self.are_cards_loading = true;
                             }
                         });
                     }
