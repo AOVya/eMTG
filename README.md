@@ -80,4 +80,3 @@ This project is licensed under the GPLv3 License.
 
 - **[egui](https://github.com/emilk/egui):** The modern immediate mode GUI library used to build the interface.
 - **[Rust](https://www.rust-lang.org/):** The powerful and safe programming language behind this project.
-- Thanks to the Magic: The Gathering community for the inspiration and ongoing support.
