@@ -1,4 +1,4 @@
-use egui::{Button, Color32, Frame, Response, RichText, Style};
+use egui::{Button, Color32, Response, RichText};
 use log::{log, Level};
 
 use crate::card_search_view::CardSearchView;
@@ -10,10 +10,10 @@ pub struct TemplateApp {
     // Example stuff:
     main_panel: String,
 
-    #[serde(skip)] // This how you opt-out of serialization of a field
+    #[serde(skip)]
     value: f32,
-    #[serde(skip)] // This how you opt-out of serialization of a field
-    card_serach_view: CardSearchView,
+    #[serde(skip)]
+    card_search_view: CardSearchView,
 }
 
 impl Default for TemplateApp {
@@ -22,7 +22,7 @@ impl Default for TemplateApp {
             // Example stuff:
             value: 2.7,
             main_panel: "none".to_owned(),
-            card_serach_view: CardSearchView::default(),
+            card_search_view: CardSearchView::default(),
         }
     }
 }
@@ -95,7 +95,7 @@ impl eframe::App for TemplateApp {
             // The central panel the region left after adding TopPanel's and SidePanel's
             match self.main_panel.as_str() {
                 "card_searcher" => {
-                    self.card_serach_view.draw(ui, ctx);
+                    self.card_search_view.draw(ui, ctx);
                 }
                 _ => {
                     ui.heading("Welcome to eMTG");

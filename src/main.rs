@@ -20,7 +20,7 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "eframe template",
         native_options,
-        Box::new(|cc| Ok(Box::new(eMTG::TemplateApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(e_mtg::TemplateApp::new(cc)))),
     )
 }
 

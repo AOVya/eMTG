@@ -1,11 +1,10 @@
 use crate::scryfall_models::{Card, ScryfallApiClient};
-use egui::{vec2, Color32, Frame, Image, Margin, TextureHandle};
-use egui_extras::{Column, Size, TableBuilder};
+use egui::{Color32, Image, TextureHandle};
+use egui_extras::{Column, TableBuilder};
 use std::collections::HashMap;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use bytes::Bytes;
-use eframe::wgpu::Color;
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct CardSearchView {
@@ -21,14 +20,14 @@ pub struct CardSearchView {
     #[serde(skip)]
     card_display: HashMap<String, TextureHandle>,
     #[serde(skip)]
-    rx: Option<mpsc::Receiver<(String, Bytes)>>,
+    rx: Option<Receiver<(String, Bytes)>>,
     #[serde(skip)]
-    tx: Option<mpsc::Sender<(String, Bytes)>>,
+    tx: Option<Sender<(String, Bytes)>>,
 }
 
 impl Default for CardSearchView {
     fn default() -> Self {
-        let (tx, rx): (Sender<(String, Bytes)>, Receiver<(String, Bytes)>) = mpsc::channel();
+        //let (tx, rx): (Sender<(String, Bytes)>, Receiver<(String, Bytes)>) = mpsc::channel();
         Self {
             card_search_spot: "angel".to_string(),
             are_cards_loading: false,
@@ -36,8 +35,8 @@ impl Default for CardSearchView {
             client: ScryfallApiClient::new(),
             card_display: HashMap::new(),
             cards_in_display: 0,
-            rx: Some(rx),
-            tx: Some(tx),
+            rx: None,
+            tx: None,
         }
     }
 }
@@ -80,24 +79,26 @@ impl CardSearchView {
             num_columns = 1;
         }
         ui.vertical(|ui| {
-            if let Ok((id, image)) = self.rx.as_ref().unwrap().try_recv() {
-                let dyn_image = image::load_from_memory(&image).unwrap();
-                let size = [
-                    dyn_image.width() as usize,
-                    dyn_image.height() as usize,
-                ];
-                let image_buffer = dyn_image.to_rgba8(); // Convert to RGBA8 format.
-                let pixels = image_buffer.into_raw();
-                let egui_cpu_image =
-                    egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
-                // This sends the image to the gpu for faster render and extra
-                // memory
-                let texture = ctx.load_texture(
-                    format!("{}", id),
-                    egui_cpu_image,
-                    Default::default(),
-                );
-                self.card_display.insert(id, texture);
+            if let Some(rx) = self.rx.as_ref() {
+                if let Ok((id, image)) = rx.try_recv() {
+                    let dyn_image = image::load_from_memory(&image).unwrap();
+                    let size = [
+                        dyn_image.width() as usize,
+                        dyn_image.height() as usize,
+                    ];
+                    let image_buffer = dyn_image.to_rgba8(); // Convert to RGBA8 format.
+                    let pixels = image_buffer.into_raw();
+                    let egui_cpu_image =
+                        egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
+                    // This sends the image to the gpu for faster render and extra
+                    // memory
+                    let texture = ctx.load_texture(
+                        format!("{}", id),
+                        egui_cpu_image,
+                        Default::default(),
+                    );
+                    self.card_display.insert(id, texture);
+                }
             }
             ui.horizontal(|ui| {
                 if !self.card_display.is_empty() {
@@ -109,6 +110,8 @@ impl CardSearchView {
                 }
                 if progress == 1.0 {
                     self.are_cards_loading = false;
+                    self.rx = None;
+                    self.tx = None;
                 }
             });
             egui::ScrollArea::vertical().show(ui, |ui| {
@@ -176,6 +179,9 @@ impl CardSearchView {
                                 ui.label(&card.set.to_ascii_uppercase());
                             });
                             if row.response().clicked() {
+                                let (tx, rx) = mpsc::channel();
+                                self.tx = Some(tx);
+                                self.rx = Some(rx);
                                 self.card_display.clear();
                                 self.cards_in_display = self
                                     .client
