@@ -1,5 +1,6 @@
+use egui::{ImageButton, Sense};
 use crate::scryfall_models::{Card, ScryfallApiClient};
-use egui::{Color32, Image, TextureHandle};
+use egui::{Color32, Image, TextureHandle, Widget};
 use egui_extras::{Column, TableBuilder};
 use std::collections::HashMap;
 use std::sync::mpsc;
@@ -130,18 +131,19 @@ impl CardSearchView {
                             .show(ui, |ui| {
                                 for (i, card) in self.card_display.iter().enumerate() {
                                     // End the row after filling a row with the computed number of columns.
-                                    if ui.add(
-                                        Image::new(card.1)
+                                    let image_size = egui::Vec2::new(cell_width, cell_width);
+                                    let response = ui.add(
+                                        ImageButton::new(card.1)
+                                            .frame(false)
                                             .rounding(15.0)
-                                            .max_width(cell_width)
-                                            .maintain_aspect_ratio(true)
-                                            .fit_to_original_size(1.0)
-                                            .bg_fill(Color32::WHITE)
-                                    ).clicked(){
-                                        self.selected_card_id = Some(card.0.into());
-                                    }
+                                            .sense(Sense::click())
+                                    );
                                     if (i + 1) % (num_columns) == 0 {
                                         ui.end_row();
+                                    }
+                                    if response.clicked() {
+                                        self.selected_card_id = Some(card.0.clone());
+                                        println!("Selected card: {}", card.0);
                                     }
                                 }
                                 ui.end_row();
@@ -201,6 +203,7 @@ impl CardSearchView {
                                     .get_card_versions(self.tx.clone().unwrap(), card)
                                     .expect("Error getting card versions") as u16;
                                 self.are_cards_loading = true;
+                                self.selected_card_id = None;
                             }
                         });
                     }
