@@ -9,6 +9,7 @@ use bytes::Bytes;
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct CardSearchView {
     card_search_spot: String,
+    selected_card_id: Option<String>,
     #[serde(skip)]
     are_cards_loading: bool,
     #[serde(skip)]
@@ -27,9 +28,9 @@ pub struct CardSearchView {
 
 impl Default for CardSearchView {
     fn default() -> Self {
-        //let (tx, rx): (Sender<(String, Bytes)>, Receiver<(String, Bytes)>) = mpsc::channel();
         Self {
             card_search_spot: "angel".to_string(),
+            selected_card_id: None,
             are_cards_loading: false,
             card_search_result_table: vec![],
             client: ScryfallApiClient::new(),
@@ -78,65 +79,77 @@ impl CardSearchView {
         if num_columns == 0 {
             num_columns = 1;
         }
-        ui.vertical(|ui| {
-            if let Some(rx) = self.rx.as_ref() {
-                if let Ok((id, image)) = rx.try_recv() {
-                    let dyn_image = image::load_from_memory(&image).unwrap();
-                    let size = [
-                        dyn_image.width() as usize,
-                        dyn_image.height() as usize,
-                    ];
-                    let image_buffer = dyn_image.to_rgba8(); // Convert to RGBA8 format.
-                    let pixels = image_buffer.into_raw();
-                    let egui_cpu_image =
-                        egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
-                    // This sends the image to the gpu for faster render and extra
-                    // memory
-                    let texture = ctx.load_texture(
-                        format!("{}", id),
-                        egui_cpu_image,
-                        Default::default(),
-                    );
-                    self.card_display.insert(id, texture);
-                }
+
+        // Below here is code for recieving card img bytes from channel and painting them. For the
+        // card info view this needs to be inside a match for a selected card.
+        match &self.selected_card_id {
+            Some(selected_card_id) => {
+                ui.heading(format!("Selected card: {}", selected_card_id));
             }
-            ui.horizontal(|ui| {
-                if !self.card_display.is_empty() {
-                    ui.heading("Card Versions");
-                }
-                let progress = self.card_display.len() as f32 / self.cards_in_display as f32;
-                if self.are_cards_loading && progress < 1.0 {
-                    ui.add(egui::ProgressBar::new(progress).show_percentage().animate(true));
-                }
-                if progress == 1.0 {
-                    self.are_cards_loading = false;
-                    self.rx = None;
-                    self.tx = None;
-                }
-            });
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                egui::Grid::new("cards_grid")
-                    .num_columns(num_columns)
-                    .spacing([10.0, 10.0])
-                    .show(ui, |ui| {
-                        for (i, card) in self.card_display.iter().enumerate() {
-                            // End the row after filling a row with the computed number of columns.
-                            ui.add(
-                                Image::new(card.1)
-                                    .rounding(15.0)
-                                    .max_width(cell_width)
-                                    .maintain_aspect_ratio(true)
-                                    .fit_to_original_size(1.0)
-                                    .bg_fill(Color32::WHITE)
+            None => {
+                ui.vertical(|ui| {
+                    if let Some(rx) = self.rx.as_ref() {
+                        if let Ok((id, image)) = rx.try_recv() {
+                            let dyn_image = image::load_from_memory(&image).unwrap();
+                            let size = [
+                                dyn_image.width() as usize,
+                                dyn_image.height() as usize,
+                            ];
+                            let image_buffer = dyn_image.to_rgba8(); // Convert to RGBA8 format.
+                            let pixels = image_buffer.into_raw();
+                            let egui_cpu_image =
+                                egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
+                            // This sends the image to the gpu for faster render and extra
+                            // memory
+                            let texture = ctx.load_texture(
+                                format!("{}", id),
+                                egui_cpu_image,
+                                Default::default(),
                             );
-                            if (i + 1) % (num_columns) == 0 {
-                                ui.end_row();
-                            }
+                            self.card_display.insert(id, texture);
                         }
-                        ui.end_row();
-                    })
-            });
-        });
+                    }
+                    ui.horizontal(|ui| {
+                        if !self.card_display.is_empty() {
+                            ui.heading("Card Versions");
+                        }
+                        let progress = self.card_display.len() as f32 / self.cards_in_display as f32;
+                        if self.are_cards_loading && progress < 1.0 {
+                            ui.add(egui::ProgressBar::new(progress).show_percentage().animate(true));
+                        }
+                        if progress == 1.0 {
+                            self.are_cards_loading = false;
+                            self.rx = None;
+                            self.tx = None;
+                        }
+                    });
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        egui::Grid::new("cards_grid")
+                            .num_columns(num_columns)
+                            .spacing([10.0, 10.0])
+                            .show(ui, |ui| {
+                                for (i, card) in self.card_display.iter().enumerate() {
+                                    // End the row after filling a row with the computed number of columns.
+                                    if ui.add(
+                                        Image::new(card.1)
+                                            .rounding(15.0)
+                                            .max_width(cell_width)
+                                            .maintain_aspect_ratio(true)
+                                            .fit_to_original_size(1.0)
+                                            .bg_fill(Color32::WHITE)
+                                    ).clicked(){
+                                        self.selected_card_id = Some(card.0.into());
+                                    }
+                                    if (i + 1) % (num_columns) == 0 {
+                                        ui.end_row();
+                                    }
+                                }
+                                ui.end_row();
+                            })
+                    });
+                });
+            }
+        }
     }
 
     fn show_cards_table_extras(&mut self, ui: &mut egui::Ui) {
