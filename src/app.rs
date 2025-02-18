@@ -90,8 +90,7 @@ impl eframe::App for TemplateApp {
                 };
             });
 
-        egui::CentralPanel::default()
-            .show(ctx, |ui| {
+        egui::CentralPanel::default().show(ctx, |ui| {
             // The central panel the region left after adding TopPanel's and SidePanel's
             match self.main_panel.as_str() {
                 "card_searcher" => {

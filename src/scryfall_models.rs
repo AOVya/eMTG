@@ -1,16 +1,16 @@
 use bytes::Bytes;
 use egui::load::Result;
+use egui::TextureHandle;
 use reqwest::{
     blocking::Client,
     header::{ACCEPT, ACCEPT_ENCODING, USER_AGENT},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::time::Duration;
 use std::sync::mpsc;
 use std::thread;
-use std::time::{Instant};
-use egui::TextureHandle;
+use std::time::Duration;
+use std::time::Instant;
 
 #[derive(Deserialize)]
 pub struct ScryfallSearchResponse {
@@ -111,7 +111,11 @@ impl ScryfallApiClient {
     }
 
     /// Given a Card struct return a vector with all its card variations
-    pub fn get_card_versions(&self, tx: mpsc::Sender<(Card, Bytes)>, card: &Card) -> Result<u32, reqwest::Error> {
+    pub fn get_card_versions(
+        &self,
+        tx: mpsc::Sender<(Card, Bytes)>,
+        card: &Card,
+    ) -> Result<u32, reqwest::Error> {
         println!("Getting card versions wirh uri {}", card.prints_search_uri);
         let response = self
             .client
@@ -130,18 +134,18 @@ impl ScryfallApiClient {
         println!("Found {} versions of the card", response_object.data.len());
         let card_n = response_object.total_cards.unwrap();
 
-        thread::spawn( move || {
+        thread::spawn(move || {
             // Recreate the client to satisfy the borrow checker.
             let tmp_client = Client::new();
             let mut last_request_time = Instant::now() - Duration::from_millis(100);
-            
+
             for card in response_object.data {
                 let elapsed = last_request_time.elapsed();
                 if elapsed < Duration::from_millis(100) {
                     thread::sleep(Duration::from_millis(100) - elapsed);
                 }
-                
-                if let Some(uri) = card.image_uris.as_ref()  {
+
+                if let Some(uri) = card.image_uris.as_ref() {
                     let response = tmp_client
                         .get(uri.normal.as_str())
                         .header(
@@ -152,11 +156,11 @@ impl ScryfallApiClient {
                         .header(ACCEPT_ENCODING, "gzip, deflate, br, zstd")
                         .timeout(Duration::from_secs(3))
                         .send()
-                        .unwrap_or_else(
-                            |e| panic!("Error downloading card image: {}", e),);
+                        .unwrap_or_else(|e| panic!("Error downloading card image: {}", e));
                     last_request_time = Instant::now();
                     if let Ok(img) = response.bytes() {
-                        tx.send((card, img)).unwrap_or_else(|e| panic!("Error sending card image: {}", e));
+                        tx.send((card, img))
+                            .unwrap_or_else(|e| panic!("Error sending card image: {}", e));
                     }
                 }
             }
@@ -164,22 +168,4 @@ impl ScryfallApiClient {
 
         Ok(card_n)
     }
-
-/*    fn download_card_image(&self, card_image_uri: &String) -> Result<Bytes, Box<dyn Error>> {
-        let response = self
-            .client
-            .get(card_image_uri)
-            .header(
-                USER_AGENT,
-                "text/html,application/xhtml+xml,application/xml;q=0.9,**;q=0.8",
-            )
-            .header(ACCEPT, "application/json")
-            .header(ACCEPT_ENCODING, "gzip, deflate, br, zstd")
-            .timeout(Duration::from_secs(3))
-            .send()?;
-
-        let image_bytes = response.bytes()?;
-
-        Ok(image_bytes)
-    }
-*/}
+}

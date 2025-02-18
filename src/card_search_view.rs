@@ -1,10 +1,10 @@
-use egui::{ImageButton, Response, Sense};
 use crate::scryfall_models::{Card, ScryfallApiClient};
-use egui::{Image};
+use bytes::Bytes;
+use egui::{Image, TextureHandle};
+use egui::{ImageButton, Response, Sense};
 use egui_extras::{Column, TableBuilder};
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
-use bytes::Bytes;
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct CardSearchView {
@@ -46,14 +46,33 @@ impl CardSearchView {
     pub fn draw(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         self.show_search_bar(ui);
         ui.separator();
-        ui.with_layout(egui::Layout::left_to_right(egui::Align::Min).with_cross_justify(true), |ui| {
-            self.show_cards_table_extras(ui);
-            self.show_card_versions(ui, ctx);
-        });
+        ui.with_layout(
+            egui::Layout::left_to_right(egui::Align::Min).with_cross_justify(true),
+            |ui| {
+                self.show_cards_table_extras(ui);
+                self.show_card_versions(ui, ctx);
+            },
+        );
+    }
+    
+    fn img_bytes_to_texture(&self, img_bytes: Bytes, ctx: &egui::Context, id: String) -> TextureHandle {
+        let dyn_image = image::load_from_memory(&img_bytes).unwrap();
+        let size = [dyn_image.width() as usize, dyn_image.height() as usize];
+        let image_buffer = dyn_image.to_rgba8(); // Convert to RGBA8 format.
+        let pixels = image_buffer.into_raw();
+        let egui_cpu_image =
+            egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
+        // This sends the image to the gpu for faster render and extra
+        // memory
+        ctx.load_texture(
+            format!("{}", id),
+            egui_cpu_image,
+            Default::default(),
+        )
     }
 
     fn show_search_bar(&mut self, ui: &mut egui::Ui) {
-       ui.horizontal(|ui| {
+        ui.horizontal(|ui| {
             // let mut line_text = "type card name here";
             ui.text_edit_singleline(&mut self.card_search_spot);
             if ui.button("Search").clicked() {
@@ -90,23 +109,7 @@ impl CardSearchView {
                 ui.vertical(|ui| {
                     if let Some(rx) = self.rx.as_ref() {
                         if let Ok((mut card, img_bytes)) = rx.try_recv() {
-                            
-                            let dyn_image = image::load_from_memory(&img_bytes).unwrap();
-                            let size = [
-                                dyn_image.width() as usize,
-                                dyn_image.height() as usize,
-                            ];
-                            let image_buffer = dyn_image.to_rgba8(); // Convert to RGBA8 format.
-                            let pixels = image_buffer.into_raw();
-                            let egui_cpu_image =
-                                egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
-                            // This sends the image to the gpu for faster render and extra
-                            // memory
-                            let texture = ctx.load_texture(
-                                format!("{}", card.id),
-                                egui_cpu_image,
-                                Default::default(),
-                            );
+                            let texture = self.img_bytes_to_texture(img_bytes, ctx, card.id.clone());
                             card.image_texture = Some(texture);
                             self.card_display.push(card);
                         }
@@ -115,9 +118,14 @@ impl CardSearchView {
                         if !self.card_display.is_empty() {
                             ui.heading("Card Versions");
                         }
-                        let progress = self.card_display.len() as f32 / self.cards_in_display as f32;
+                        let progress =
+                            self.card_display.len() as f32 / self.cards_in_display as f32;
                         if self.are_cards_loading && progress < 1.0 {
-                            ui.add(egui::ProgressBar::new(progress).show_percentage().animate(true));
+                            ui.add(
+                                egui::ProgressBar::new(progress)
+                                    .show_percentage()
+                                    .animate(true),
+                            );
                         }
                         if progress == 1.0 {
                             self.are_cards_loading = false;
@@ -134,15 +142,16 @@ impl CardSearchView {
                                     if let Some(img_texture) = &card.image_texture {
                                         let response: Response;
                                         response = ui.add(
-                                            ImageButton::new(Image::new(img_texture)
-                                                .rounding(15.0)
-                                                .max_width(cell_width)
-                                                .maintain_aspect_ratio(true)
-                                                .fit_to_original_size(1.0)
-                                                .bg_fill(egui::Color32::WHITE))
-                                                .frame(true)
-                                                .sense(Sense::click())
-                                            
+                                            ImageButton::new(
+                                                Image::new(img_texture)
+                                                    .rounding(15.0)
+                                                    .max_width(cell_width)
+                                                    .maintain_aspect_ratio(true)
+                                                    .fit_to_original_size(1.0)
+                                                    .bg_fill(egui::Color32::WHITE),
+                                            )
+                                            .frame(true)
+                                            .sense(Sense::click()),
                                         );
                                         if response.clicked() {
                                             self.selected_card_id = Some(card.id.clone());
@@ -162,7 +171,6 @@ impl CardSearchView {
     }
 
     fn show_cards_table_extras(&mut self, ui: &mut egui::Ui) {
-        // Create a new TableBuilder on the provided UI.
         if self.card_search_result_table.is_empty() {
             return;
         }
@@ -171,25 +179,20 @@ impl CardSearchView {
                 .striped(true)
                 .cell_layout(egui::Layout::left_to_right(egui::Align::Max))
                 .columns(Column::auto(), 3)
-                .sense(egui::Sense::click())
+                .sense(Sense::click())
                 .header(18.0, |mut header| {
-                    // Header for the first column: Name
                     header.col(|ui| {
                         ui.strong("Name");
                     });
-                    // Header for the second column: Type
                     header.col(|ui| {
                         ui.strong("Type");
                     });
-                    // Header for the third column: Set
                     header.col(|ui| {
                         ui.strong("Set");
                     });
                 })
-                // Build the table body:
                 .body(|mut body| {
                     for card in &self.card_search_result_table {
-                        // You can adjust the row height as needed; here we use 30.0.
                         body.row(20.0, |mut row| {
                             row.col(|ui| {
                                 ui.label(&card.name);
@@ -208,7 +211,8 @@ impl CardSearchView {
                                 self.cards_in_display = self
                                     .client
                                     .get_card_versions(self.tx.clone().unwrap(), card)
-                                    .expect("Error getting card versions") as u16;
+                                    .expect("Error getting card versions")
+                                    as u16;
                                 self.are_cards_loading = true;
                                 self.selected_card_id = None;
                             }
