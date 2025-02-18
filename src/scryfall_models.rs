@@ -10,8 +10,9 @@ use std::time::Duration;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Instant};
+use egui::TextureHandle;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 pub struct ScryfallSearchResponse {
     /// Typically "list" for a list response.
     pub data: Vec<Card>,
@@ -34,7 +35,7 @@ impl Default for ScryfallSearchResponse {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize)]
 pub struct Card {
     pub set: String,
     pub name: String,
@@ -45,6 +46,8 @@ pub struct Card {
     pub prints_search_uri: String,
     #[serde(default)]
     pub type_line: Option<String>,
+    #[serde(default, skip)]
+    pub image_texture: Option<TextureHandle>,
     #[serde(flatten)]
     pub _extra: Value,
 }
@@ -108,7 +111,7 @@ impl ScryfallApiClient {
     }
 
     /// Given a Card struct return a vector with all its card variations
-    pub fn get_card_versions(&self, tx: mpsc::Sender<(String, Bytes)>, card: &Card) -> Result<u32, reqwest::Error> {
+    pub fn get_card_versions(&self, tx: mpsc::Sender<(Card, Bytes)>, card: &Card) -> Result<u32, reqwest::Error> {
         println!("Getting card versions wirh uri {}", card.prints_search_uri);
         let response = self
             .client
@@ -153,7 +156,7 @@ impl ScryfallApiClient {
                             |e| panic!("Error downloading card image: {}", e),);
                     last_request_time = Instant::now();
                     if let Ok(img) = response.bytes() {
-                        tx.send((card.id.parse::<String>().unwrap(), img)).unwrap_or_else(|e| panic!("Error sending card image: {}", e));
+                        tx.send((card, img)).unwrap_or_else(|e| panic!("Error sending card image: {}", e));
                     }
                 }
             }

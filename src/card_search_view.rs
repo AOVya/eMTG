@@ -1,8 +1,7 @@
-use egui::{ImageButton, Sense};
+use egui::{ImageButton, Response, Sense};
 use crate::scryfall_models::{Card, ScryfallApiClient};
-use egui::{Color32, Image, TextureHandle, Widget};
+use egui::{Image};
 use egui_extras::{Column, TableBuilder};
-use std::collections::HashMap;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use bytes::Bytes;
@@ -20,11 +19,11 @@ pub struct CardSearchView {
     #[serde(skip)]
     client: ScryfallApiClient,
     #[serde(skip)]
-    card_display: HashMap<String, TextureHandle>,
+    card_display: Vec<Card>,
     #[serde(skip)]
-    rx: Option<Receiver<(String, Bytes)>>,
+    rx: Option<Receiver<(Card, Bytes)>>,
     #[serde(skip)]
-    tx: Option<Sender<(String, Bytes)>>,
+    tx: Option<Sender<(Card, Bytes)>>,
 }
 
 impl Default for CardSearchView {
@@ -35,7 +34,7 @@ impl Default for CardSearchView {
             are_cards_loading: false,
             card_search_result_table: vec![],
             client: ScryfallApiClient::new(),
-            card_display: HashMap::new(),
+            card_display: vec![],
             cards_in_display: 0,
             rx: None,
             tx: None,
@@ -90,8 +89,9 @@ impl CardSearchView {
             None => {
                 ui.vertical(|ui| {
                     if let Some(rx) = self.rx.as_ref() {
-                        if let Ok((id, image)) = rx.try_recv() {
-                            let dyn_image = image::load_from_memory(&image).unwrap();
+                        if let Ok((mut card, img_bytes)) = rx.try_recv() {
+                            
+                            let dyn_image = image::load_from_memory(&img_bytes).unwrap();
                             let size = [
                                 dyn_image.width() as usize,
                                 dyn_image.height() as usize,
@@ -103,11 +103,12 @@ impl CardSearchView {
                             // This sends the image to the gpu for faster render and extra
                             // memory
                             let texture = ctx.load_texture(
-                                format!("{}", id),
+                                format!("{}", card.id),
                                 egui_cpu_image,
                                 Default::default(),
                             );
-                            self.card_display.insert(id, texture);
+                            card.image_texture = Some(texture);
+                            self.card_display.push(card);
                         }
                     }
                     ui.horizontal(|ui| {
@@ -130,20 +131,26 @@ impl CardSearchView {
                             .spacing([10.0, 10.0])
                             .show(ui, |ui| {
                                 for (i, card) in self.card_display.iter().enumerate() {
+                                    if let Some(img_texture) = &card.image_texture {
+                                        let response: Response;
+                                        response = ui.add(
+                                            ImageButton::new(Image::new(img_texture)
+                                                .rounding(15.0)
+                                                .max_width(cell_width)
+                                                .maintain_aspect_ratio(true)
+                                                .fit_to_original_size(1.0)
+                                                .bg_fill(egui::Color32::WHITE))
+                                                .frame(true)
+                                                .sense(Sense::click())
+                                            
+                                        );
+                                        if response.clicked() {
+                                            self.selected_card_id = Some(card.id.clone());
+                                        }
+                                    };
                                     // End the row after filling a row with the computed number of columns.
-                                    let image_size = egui::Vec2::new(cell_width, cell_width);
-                                    let response = ui.add(
-                                        ImageButton::new(card.1)
-                                            .frame(false)
-                                            .rounding(15.0)
-                                            .sense(Sense::click())
-                                    );
                                     if (i + 1) % (num_columns) == 0 {
                                         ui.end_row();
-                                    }
-                                    if response.clicked() {
-                                        self.selected_card_id = Some(card.0.clone());
-                                        println!("Selected card: {}", card.0);
                                     }
                                 }
                                 ui.end_row();
