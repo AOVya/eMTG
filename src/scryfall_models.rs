@@ -46,13 +46,29 @@ pub struct Card {
     pub prints_search_uri: String,
     #[serde(default)]
     pub type_line: Option<String>,
+    pub oracle_text: Option<String>,
     #[serde(default, skip)]
     pub image_texture: Option<TextureHandle>,
     #[serde(flatten)]
     pub _extra: Value,
 }
-
+impl Clone for Card {
+    fn clone(&self) -> Self {
+        Card {
+            set: self.set.clone(),
+            name: self.name.clone(),
+            id: self.id.clone(),
+            image_uris: self.image_uris.clone(),
+            prints_search_uri: self.prints_search_uri.clone(),
+            type_line: self.type_line.clone(),
+            oracle_text: self.oracle_text.clone(),
+            image_texture: self.image_texture.clone(),
+            _extra: self._extra.clone(),
+        }
+    }
+}
 #[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone)]
 pub struct ImageUris {
     pub small: String,
     pub normal: String,
